@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -31,8 +32,21 @@ func main() {
 	reflection.Register(s)
 
 	go func() {
-		log.Println("Serving...")
-		log.Fatal(http.Serve(autocert.NewListener("brycedarling.com"), s))
+		m := &autocert.Manager{
+			Cache:      autocert.DirCache("certs"),
+			Prompt:     autocert.AcceptTOS,
+			HostPolicy: autocert.HostWhitelist("brycedarling.com"),
+		}
+		port := os.Getenv("PORT")
+		if port == "" {
+			port = "https"
+		}
+		s := &http.Server{
+			Addr:      fmt.Sprintf(":%s", port),
+			TLSConfig: m.TLSConfig(),
+		}
+		log.Printf("Serving on port %s...", port)
+		log.Fatal(s.ListenAndServeTLS("", ""))
 	}()
 
 	// Wait for ctrl-c to exit
