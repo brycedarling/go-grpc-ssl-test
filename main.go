@@ -11,6 +11,7 @@ import (
 	"github.com/brycedarling/go-grpc-ssl-test/internal/echopb"
 	"golang.org/x/crypto/acme/autocert"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/reflection"
 )
 
@@ -24,29 +25,50 @@ func (*server) Echo(ctx context.Context, req *echopb.EchoRequest) (*echopb.EchoR
 	return &echopb.EchoResponse{Message: message}, nil
 }
 
+func httpGrpcRouter(grpcServer *grpc.Server, httpHandler http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("Content-Type: %s", r.Header.Get("Content-Type"))
+		if r.ProtoMajor == 2 { // && strings.Contains(r.Header.Get("Content-Type"), "application/grpc") {
+			grpcServer.ServeHTTP(w, r)
+		} else {
+			httpHandler.ServeHTTP(w, r)
+		}
+	})
+}
+
 func main() {
 	log.Println("Echo Service starting...")
 
-	s := grpc.NewServer()
-	echopb.RegisterEchoServiceServer(s, &server{})
-	reflection.Register(s)
+	m := &autocert.Manager{
+		Cache:      autocert.DirCache("certs"),
+		HostPolicy: autocert.HostWhitelist("brycedarling.com"),
+		Prompt:     autocert.AcceptTOS,
+	}
+	creds := credentials.NewTLS(m.TLSConfig())
+	opts := []grpc.ServerOption{grpc.Creds(creds)}
+
+	grpcServer := grpc.NewServer(opts...)
+	echopb.RegisterEchoServiceServer(grpcServer, &server{})
+	reflection.Register(grpcServer)
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("hello, world"))
+	})
+
+	go log.Fatal(http.ListenAndServe(":http", m.HTTPHandler(nil)))
 
 	go func() {
-		m := &autocert.Manager{
-			Cache:      autocert.DirCache("certs"),
-			Prompt:     autocert.AcceptTOS,
-			HostPolicy: autocert.HostWhitelist("brycedarling.com"),
-		}
 		port := os.Getenv("PORT")
 		if port == "" {
 			port = "https"
 		}
-		s := &http.Server{
+		httpServer := &http.Server{
 			Addr:      fmt.Sprintf(":%s", port),
+			Handler:   httpGrpcRouter(grpcServer, handler),
 			TLSConfig: m.TLSConfig(),
 		}
 		log.Printf("Serving on port %s...", port)
-		log.Fatal(s.ListenAndServeTLS("", ""))
+		log.Fatal(httpServer.ListenAndServeTLS("", ""))
 	}()
 
 	// Wait for ctrl-c to exit
@@ -56,6 +78,6 @@ func main() {
 	<-ch
 
 	log.Println("Stopping the server...")
-	s.Stop()
+	grpcServer.Stop()
 	log.Println("Stopped.")
 }
