@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -37,6 +38,12 @@ func grpcHandler(s *grpc.Server, h http.Handler) http.Handler {
 	})
 }
 
+func httpHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "Hello, user from IP: %s", r.RemoteAddr)
+	})
+}
+
 func httpsHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "Hello, TLS user from IP: %s\n\nYour config is: %+v", r.RemoteAddr, r.TLS)
@@ -46,14 +53,16 @@ func httpsHandler() http.Handler {
 func main() {
 	log.Println("Echo Service starting...")
 
+	host := "go-grpc-ssl-test-oc3j2.ondigitalocean.app"
+
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "https"
+		port = "50051"
 	}
 
 	m := &autocert.Manager{
 		Cache:      autocert.DirCache("certs"),
-		HostPolicy: autocert.HostWhitelist("go-grpc-ssl-test-oc3j2.ondigitalocean.app"),
+		HostPolicy: autocert.HostWhitelist(host),
 		Prompt:     autocert.AcceptTOS,
 	}
 	creds := credentials.NewTLS(m.TLSConfig())
@@ -64,9 +73,24 @@ func main() {
 	echopb.RegisterEchoServiceServer(s, &server{})
 	reflection.Register(s)
 
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", port))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	go func() {
+		log.Println("Serving on port http...")
+		log.Fatal(http.ListenAndServe(":http", httpHandler()))
+	}()
+
+	go func() {
+		log.Println("Serving on port https...")
+		log.Fatal(http.Serve(autocert.NewListener(host), httpsHandler()))
+	}()
+
 	go func() {
 		log.Printf("Serving on port %s...", port)
-		log.Fatal(http.Serve(m.Listener(), grpcHandler(s, httpsHandler())))
+		log.Fatal(s.Serve(lis))
 	}()
 
 	// Wait for ctrl-c to exit
@@ -77,5 +101,6 @@ func main() {
 
 	log.Println("Stopping the server...")
 	s.Stop()
+	lis.Close()
 	log.Println("Stopped.")
 }
