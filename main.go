@@ -55,19 +55,23 @@ func main() {
 		w.Write([]byte("hello, world"))
 	})
 
-	go log.Fatal(http.ListenAndServe(":http", m.HTTPHandler(nil)))
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "https"
+	}
 
 	go func() {
-		port := os.Getenv("PORT")
-		if port == "" {
-			port = "https"
-		}
+		log.Printf("Serving on port %s...", port)
+		log.Fatal(http.ListenAndServe(fmt.Sprintf(":%s", port), m.HTTPHandler(nil)))
+	}()
+
+	go func() {
 		httpServer := &http.Server{
-			Addr:      fmt.Sprintf(":%s", port),
+			Addr:      ":https",
 			Handler:   httpGrpcRouter(grpcServer, handler),
 			TLSConfig: m.TLSConfig(),
 		}
-		log.Printf("Serving on port %s...", port)
+		log.Println("Serving on port https...")
 		log.Fatal(httpServer.ListenAndServeTLS("", ""))
 	}()
 
