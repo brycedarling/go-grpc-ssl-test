@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"net"
+	"net/http"
 	"os"
 	"os/signal"
 
@@ -25,22 +25,31 @@ func (*server) Echo(ctx context.Context, req *echopb.EchoRequest) (*echopb.EchoR
 	return &echopb.EchoResponse{Message: message}, nil
 }
 
-/*
-func httpGrpcRouter(grpcServer *grpc.Server, httpHandler http.Handler) http.Handler {
+func grpcHandler(s *grpc.Server, h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Content-Type: %s", r.Header.Get("Content-Type"))
 		log.Printf("ProtoMajor: %d", r.ProtoMajor)
 		if r.ProtoMajor == 2 { // && strings.Contains(r.Header.Get("Content-Type"), "application/grpc") {
-			grpcServer.ServeHTTP(w, r)
+			s.ServeHTTP(w, r)
 		} else {
-			httpHandler.ServeHTTP(w, r)
+			h.ServeHTTP(w, r)
 		}
 	})
 }
-*/
+
+func httpsHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "Hello, TLS user from IP: %s\n\nYour config is: %+v", r.RemoteAddr, r.TLS)
+	})
+}
 
 func main() {
 	log.Println("Echo Service starting...")
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "https"
+	}
 
 	m := &autocert.Manager{
 		Cache:      autocert.DirCache("certs"),
@@ -50,43 +59,14 @@ func main() {
 	creds := credentials.NewTLS(m.TLSConfig())
 	opts := []grpc.ServerOption{grpc.Creds(creds)}
 
-	grpcServer := grpc.NewServer(opts...)
-	echopb.RegisterEchoServiceServer(grpcServer, &server{})
-	reflection.Register(grpcServer)
-
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "https"
-	}
-
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%s", port))
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	/*
-		go func() {
-			log.Printf("Serving on port %s...", port)
-			log.Fatal(http.ListenAndServe(fmt.Sprintf(":%s", port), m.HTTPHandler(nil)))
-		}()
-	*/
-
-	/*
-		go func() {
-			httpServer := &http.Server{
-				// Addr:      ":https",
-				Addr:      fmt.Sprintf(":%s", port),
-				Handler:   httpGrpcRouter(grpcServer, m.HTTPHandler(handler)),
-				TLSConfig: m.TLSConfig(),
-			}
-			log.Printf("Serving on port %s...", port)
-			log.Fatal(httpServer.ListenAndServeTLS("", ""))
-		}()
-	*/
+	s := grpc.NewServer(opts...)
+	log.Println("Starting gRPC services...")
+	echopb.RegisterEchoServiceServer(s, &server{})
+	reflection.Register(s)
 
 	go func() {
 		log.Printf("Serving on port %s...", port)
-		log.Fatal(grpcServer.Serve(listener))
+		log.Fatal(http.Serve(m.Listener(), grpcHandler(s, httpsHandler())))
 	}()
 
 	// Wait for ctrl-c to exit
@@ -96,6 +76,6 @@ func main() {
 	<-ch
 
 	log.Println("Stopping the server...")
-	grpcServer.Stop()
+	s.Stop()
 	log.Println("Stopped.")
 }
