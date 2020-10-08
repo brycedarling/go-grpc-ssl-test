@@ -57,7 +57,10 @@ func httpsHandler() http.Handler {
 func main() {
 	log.Println("Echo Service starting...")
 
-	host := "go-grpc-ssl-test-oc3j2.ondigitalocean.app"
+	host := os.Getenv("HOST")
+	if host == "" {
+		host = "brycedarling.com"
+	}
 
 	port := os.Getenv("PORT")
 	if port == "" {
