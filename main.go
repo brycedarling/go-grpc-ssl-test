@@ -41,7 +41,7 @@ func main() {
 
 	m := &autocert.Manager{
 		Cache:      autocert.DirCache("certs"),
-		HostPolicy: autocert.HostWhitelist("brycedarling.com"),
+		HostPolicy: autocert.HostWhitelist("brycedarling.com", "go-grpc-ssl-test-oc3j2.ondigitalocean.app", "localhost"),
 		Prompt:     autocert.AcceptTOS,
 	}
 	creds := credentials.NewTLS(m.TLSConfig())
