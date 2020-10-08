@@ -38,9 +38,13 @@ func grpcHandler(s *grpc.Server, h http.Handler) http.Handler {
 	})
 }
 
-func httpHandler() http.Handler {
+func redirectTLS() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "Hello, user from IP: %s", r.RemoteAddr)
+		host, _, _ := net.SplitHostPort(r.Host)
+		u := r.URL
+		u.Host = net.JoinHostPort(host, "443")
+		u.Scheme = "https"
+		http.Redirect(w, r, u.String(), http.StatusMovedPermanently)
 	})
 }
 
@@ -80,7 +84,7 @@ func main() {
 
 	go func() {
 		log.Println("Serving on port http...")
-		log.Fatal(http.ListenAndServe(":http", httpHandler()))
+		log.Fatal(http.ListenAndServe(":http", redirectTLS()))
 	}()
 
 	go func() {
