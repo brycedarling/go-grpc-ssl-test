@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"net/http"
+	"net"
 	"os"
 	"os/signal"
 
@@ -25,6 +25,7 @@ func (*server) Echo(ctx context.Context, req *echopb.EchoRequest) (*echopb.EchoR
 	return &echopb.EchoResponse{Message: message}, nil
 }
 
+/*
 func httpGrpcRouter(grpcServer *grpc.Server, httpHandler http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Content-Type: %s", r.Header.Get("Content-Type"))
@@ -36,6 +37,7 @@ func httpGrpcRouter(grpcServer *grpc.Server, httpHandler http.Handler) http.Hand
 		}
 	})
 }
+*/
 
 func main() {
 	log.Println("Echo Service starting...")
@@ -52,13 +54,14 @@ func main() {
 	echopb.RegisterEchoServiceServer(grpcServer, &server{})
 	reflection.Register(grpcServer)
 
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("hello, world"))
-	})
-
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "https"
+	}
+
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%s", port))
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	/*
@@ -68,15 +71,22 @@ func main() {
 		}()
 	*/
 
+	/*
+		go func() {
+			httpServer := &http.Server{
+				// Addr:      ":https",
+				Addr:      fmt.Sprintf(":%s", port),
+				Handler:   httpGrpcRouter(grpcServer, m.HTTPHandler(handler)),
+				TLSConfig: m.TLSConfig(),
+			}
+			log.Printf("Serving on port %s...", port)
+			log.Fatal(httpServer.ListenAndServeTLS("", ""))
+		}()
+	*/
+
 	go func() {
-		httpServer := &http.Server{
-			// Addr:      ":https",
-			Addr:      fmt.Sprintf(":%s", port),
-			Handler:   httpGrpcRouter(grpcServer, m.HTTPHandler(handler)),
-			TLSConfig: m.TLSConfig(),
-		}
 		log.Printf("Serving on port %s...", port)
-		log.Fatal(httpServer.ListenAndServeTLS("", ""))
+		log.Fatal(grpcServer.Serve(listener))
 	}()
 
 	// Wait for ctrl-c to exit
