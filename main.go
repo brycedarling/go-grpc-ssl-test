@@ -28,6 +28,7 @@ func (*server) Echo(ctx context.Context, req *echopb.EchoRequest) (*echopb.EchoR
 func httpGrpcRouter(grpcServer *grpc.Server, httpHandler http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Content-Type: %s", r.Header.Get("Content-Type"))
+		log.Printf("ProtoMajor: %d", r.ProtoMajor)
 		if r.ProtoMajor == 2 { // && strings.Contains(r.Header.Get("Content-Type"), "application/grpc") {
 			grpcServer.ServeHTTP(w, r)
 		} else {
@@ -41,7 +42,7 @@ func main() {
 
 	m := &autocert.Manager{
 		Cache:      autocert.DirCache("certs"),
-		HostPolicy: autocert.HostWhitelist("brycedarling.com", "go-grpc-ssl-test-oc3j2.ondigitalocean.app", "localhost"),
+		HostPolicy: autocert.HostWhitelist("go-grpc-ssl-test-oc3j2.ondigitalocean.app"),
 		Prompt:     autocert.AcceptTOS,
 	}
 	creds := credentials.NewTLS(m.TLSConfig())
